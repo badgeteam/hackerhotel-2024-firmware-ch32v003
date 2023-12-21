@@ -14,7 +14,8 @@ cd hh24ch32
 git clone https://github.com/cnlohr/ch32v003fun.git
 git clone https://github.com/badgeteam/hackerhotel-2024-firmware-ch32v003.git
 cd hackerhotel-2024-firmware-ch32v003
-make CH32V003FUN=../ch32v003fun/ch32v003fun MINICHLINK=../ch32v003fun/minichlink
+sudo apt-get install build-essential libnewlib-dev gcc-riscv64-unknown-elf libusb-1.0-0-dev libudev-dev
+sudo make CH32V003FUN=../ch32v003fun/ch32v003fun MINICHLINK=../ch32v003fun/minichlink
 ```
 
 ## Usage
