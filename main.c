@@ -4,8 +4,23 @@
 #include <string.h>
 #include <stdbool.h>
 
-// Board revision
-#define HW_REV 1
+// Firmware version
+#define FW_VERSION 1
+
+// I2C registers
+#define I2C_REG_FW_VERSION_0 0  // LSB
+#define I2C_REG_FW_VERSION_1 1  // MSB
+#define I2C_REG_RESERVED_0   2
+#define I2C_REG_RESERVED_1   3
+#define I2C_REG_LED_0        4  // LSB
+#define I2C_REG_LED_1        5
+#define I2C_REG_LED_2        6
+#define I2C_REG_LED_3        7  // MSB
+#define I2C_REG_BTN_0        8  // Button 0
+#define I2C_REG_BTN_1        9  // Button 1
+#define I2C_REG_BTN_2        10 // Button 2
+#define I2C_REG_BTN_3        11 // Button 3
+#define I2C_REG_BTN_4        12 // Button 4
 
 uint8_t i2c_registers[255] = {0};
 
@@ -127,15 +142,22 @@ int main() {
             i2c_changed = false;
         }
 
-        uint32_t* led_values = (uint32_t*) &i2c_registers[0];
+        uint32_t led_values = (curr_i2c_registers[I2C_REG_LED_0]) |
+                              (curr_i2c_registers[I2C_REG_LED_1] << 8) |
+                              (curr_i2c_registers[I2C_REG_LED_2] << 16) |
+                              (curr_i2c_registers[I2C_REG_LED_3] << 24);
+
         for (uint8_t i = 0; i <= 20; i++) {
-            if ((*led_values >> i) & 1) {
+            if ((led_values >> i) & 1) {
                 led_on(i + 1);
             }
         }
         leds_off();
 
-        read_buttons(&i2c_registers[5]);
+        // Write to registers
+        i2c_registers[I2C_REG_FW_VERSION_0] = (FW_VERSION     ) & 0xFF;
+        i2c_registers[I2C_REG_FW_VERSION_1] = (FW_VERSION >> 8) & 0xFF;
+        read_buttons(&i2c_registers[I2C_REG_BTN_0]);
 
         memcpy(prev_i2c_registers, curr_i2c_registers, sizeof(i2c_registers));
     }
