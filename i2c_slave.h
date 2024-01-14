@@ -3,7 +3,7 @@
  *
  * MIT License
  *
- * Copyright (c) 2023 Renze Nicolai
+ * Copyright (c) 2024 Renze Nicolai
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -30,10 +30,12 @@
 #include "ch32v003fun.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 #define APB_CLOCK FUNCONF_SYSTEM_CORE_CLOCK
 
-typedef void (*i2c_callback_t)(void);
+typedef void (*i2c_read_callback_t)(uint8_t reg);
+typedef void (*i2c_stop_callback_t)(uint8_t reg, uint8_t length);
 
 struct _i2c_slave_state {
     uint8_t first_write;
@@ -41,16 +43,19 @@ struct _i2c_slave_state {
     uint8_t position;
     volatile uint8_t* volatile registers;
     uint8_t size;
-    i2c_callback_t callback;
+    i2c_stop_callback_t stop_callback;
+    i2c_read_callback_t read_callback;
+    bool writing;
 } i2c_slave_state;
 
-void SetupI2CSlave(uint8_t address1, uint8_t address2, volatile uint8_t* registers, uint8_t size, i2c_callback_t callback) {
+void SetupI2CSlave(uint8_t address1, uint8_t address2, volatile uint8_t* registers, uint8_t size, i2c_stop_callback_t stop_callback, i2c_read_callback_t read_callback) {
     i2c_slave_state.first_write = 1;
     i2c_slave_state.offset = 0;
     i2c_slave_state.position = 0;
     i2c_slave_state.registers = registers;
     i2c_slave_state.size = size;
-    i2c_slave_state.callback = callback;
+    i2c_slave_state.stop_callback = stop_callback;
+    i2c_slave_state.read_callback = read_callback;
 
     // Enable GPIOC and I2C
     RCC->APB2PCENR |= RCC_APB2Periph_GPIOC;
@@ -119,7 +124,9 @@ void I2C1_EV_IRQHandler(void) {
             i2c_slave_state.offset = I2C1->DATAR;
             i2c_slave_state.position = i2c_slave_state.offset;
             i2c_slave_state.first_write = 0;
+            i2c_slave_state.writing = false;
         } else { // Normal register write
+            i2c_slave_state.writing = true;
             if (i2c_slave_state.position < i2c_slave_state.size) {
                 i2c_slave_state.registers[i2c_slave_state.position] = I2C1->DATAR;
                 i2c_slave_state.position++;
@@ -128,8 +135,12 @@ void I2C1_EV_IRQHandler(void) {
     }
 
     if (STAR1 & I2C_STAR1_TXE) { // Read event
+        i2c_slave_state.writing = false;
         if (i2c_slave_state.position < i2c_slave_state.size) {
             I2C1->DATAR = i2c_slave_state.registers[i2c_slave_state.position];
+            if (i2c_slave_state.read_callback != NULL) {
+                i2c_slave_state.read_callback(i2c_slave_state.position);
+            }
             i2c_slave_state.position++;
         } else {
             I2C1->DATAR = 0x00;
@@ -138,8 +149,8 @@ void I2C1_EV_IRQHandler(void) {
 
     if (STAR1 & I2C_STAR1_STOPF) { // Stop event
         I2C1->CTLR1 &= ~(I2C_CTLR1_STOP); // Clear stop
-        if (i2c_slave_state.callback != NULL) {
-            i2c_slave_state.callback();
+        if (i2c_slave_state.stop_callback != NULL) {
+            i2c_slave_state.stop_callback(i2c_slave_state.offset, i2c_slave_state.position - i2c_slave_state.offset);
         }
     }
 }

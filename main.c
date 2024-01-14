@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 // Firmware version
-#define FW_VERSION 1
+#define FW_VERSION 2
 
 // I2C registers
 #define I2C_REG_FW_VERSION_0 0  // LSB
@@ -28,8 +28,21 @@ uint8_t curr_i2c_registers[sizeof(i2c_registers)] = {0};
 uint8_t prev_i2c_registers[sizeof(i2c_registers)] = {0};
 
 bool i2c_changed = false;
+bool i2c_buttons_read = false;
 
-void i2c_callback() {
+uint8_t prev_buttons[5] = {0};
+
+void set_irq(bool active) {
+    GPIOC->BSHR |= 1 << (4 + (active ? 16 : 0)); // Pull PC4 low when active, else float high
+}
+
+void i2c_read_callback(uint8_t reg) {
+    if (reg >= I2C_REG_BTN_0 && reg <= I2C_REG_BTN_4) {
+        i2c_buttons_read = true;
+    }
+}
+
+void i2c_stop_callback(uint8_t reg, uint8_t length) {
     i2c_changed = true;
 }
 
@@ -120,7 +133,7 @@ int main() {
     RCC->APB2PCENR |= RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOC | RCC_APB2Periph_GPIOD;
 
     // Initialize I2C in peripheral mode on pins PC1 (SDA) and PC2 (SCL)
-    SetupI2CSlave(0x42, 0, i2c_registers, sizeof(i2c_registers), i2c_callback);
+    SetupI2CSlave(0x42, 0, i2c_registers, sizeof(i2c_registers), i2c_stop_callback, i2c_read_callback);
 
     // Configure MSWS1 (PD6), MSWS2 (PD5), MSWS3 (PD4), MSWS4 (PD3), MSWS5 (PD2) for output open-drain mode
     // and set them all to high
@@ -136,10 +149,20 @@ int main() {
         GPIOC->CFGLR |= (GPIO_Speed_In | GPIO_CNF_IN_FLOATING) << (4 * i);
     }
 
+    // Configure IRQ (PC4) as open drain output and set it to high (floating)
+    GPIOC->CFGLR &= ~(0xf<<(4*4));
+    GPIOC->CFGLR |= (GPIO_Speed_10MHz | GPIO_CNF_OUT_OD) << (4 * 4);
+    GPIOC->BSHR  |= 1 << 4;
+
     while (1) {
         if (i2c_changed) {
             memcpy(curr_i2c_registers, i2c_registers, sizeof(i2c_registers));
             i2c_changed = false;
+        }
+
+        if (i2c_buttons_read) {
+            set_irq(false);
+            i2c_buttons_read = false;
         }
 
         uint32_t led_values = (curr_i2c_registers[I2C_REG_LED_0]) |
@@ -157,7 +180,18 @@ int main() {
         // Write to registers
         i2c_registers[I2C_REG_FW_VERSION_0] = (FW_VERSION     ) & 0xFF;
         i2c_registers[I2C_REG_FW_VERSION_1] = (FW_VERSION >> 8) & 0xFF;
-        read_buttons(&i2c_registers[I2C_REG_BTN_0]);
+
+        uint8_t buttons[5] = {0};
+        read_buttons(buttons);
+        if (memcmp(prev_buttons, buttons, 5) != 0) {
+            memcpy(&i2c_registers[I2C_REG_BTN_0], buttons, 5);
+            memcpy(prev_buttons, buttons, 5);
+            set_irq(true);
+        }
+
+        if (buttons[0]) set_irq(true);
+        if (buttons[1]) set_irq(false);
+
 
         memcpy(prev_i2c_registers, curr_i2c_registers, sizeof(i2c_registers));
     }
