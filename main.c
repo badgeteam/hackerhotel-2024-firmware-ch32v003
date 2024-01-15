@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 // Firmware version
-#define FW_VERSION 2
+#define FW_VERSION 3
 
 // I2C registers
 #define I2C_REG_FW_VERSION_0 0  // LSB
@@ -188,10 +188,6 @@ int main() {
             memcpy(prev_buttons, buttons, 5);
             set_irq(true);
         }
-
-        if (buttons[0]) set_irq(true);
-        if (buttons[1]) set_irq(false);
-
 
         memcpy(prev_i2c_registers, curr_i2c_registers, sizeof(i2c_registers));
     }
