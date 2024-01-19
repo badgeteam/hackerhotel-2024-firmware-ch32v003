@@ -5,7 +5,7 @@
 #include <stdbool.h>
 
 // Firmware version
-#define FW_VERSION 3
+#define FW_VERSION 4
 
 // I2C registers
 #define I2C_REG_FW_VERSION_0 0  // LSB
@@ -21,6 +21,9 @@
 #define I2C_REG_BTN_2        10 // Button 2
 #define I2C_REG_BTN_3        11 // Button 3
 #define I2C_REG_BTN_4        12 // Button 4
+
+const uint32_t button_poll_interval = 100 * DELAY_MS_TIME;
+uint32_t buttons_previous = 0;
 
 uint8_t i2c_registers[255] = {0};
 
@@ -181,12 +184,17 @@ int main() {
         i2c_registers[I2C_REG_FW_VERSION_0] = (FW_VERSION     ) & 0xFF;
         i2c_registers[I2C_REG_FW_VERSION_1] = (FW_VERSION >> 8) & 0xFF;
 
-        uint8_t buttons[5] = {0};
-        read_buttons(buttons);
-        if (memcmp(prev_buttons, buttons, 5) != 0) {
-            memcpy(&i2c_registers[I2C_REG_BTN_0], buttons, 5);
-            memcpy(prev_buttons, buttons, 5);
-            set_irq(true);
+        uint32_t now = SysTick->CNT;
+
+        if (now - buttons_previous >= button_poll_interval) {
+            buttons_previous = now;
+            uint8_t buttons[5] = {0};
+            read_buttons(buttons);
+            if (memcmp(prev_buttons, buttons, 5) != 0) {
+                memcpy(&i2c_registers[I2C_REG_BTN_0], buttons, 5);
+                memcpy(prev_buttons, buttons, 5);
+                set_irq(true);
+            }
         }
 
         memcpy(prev_i2c_registers, curr_i2c_registers, sizeof(i2c_registers));
